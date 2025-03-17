@@ -15,8 +15,8 @@ import (
 
 // Config holds the plugin settings.
 type Config struct {
-	InterfacePackage string `mapstructure:"interface_package"`
-	InterfaceName    string `mapstructure:"interface_name"`
+	InterfacePackage string `json:"interface_package"`
+	InterfaceName    string `json:"interface_name"`
 }
 
 // PluginErrchecklog implements register.LinterPlugin.
