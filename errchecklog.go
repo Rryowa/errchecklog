@@ -152,6 +152,7 @@ findPrinterInterface ищет интерфейс с именем "Printer":
 func findPrinterInterface(pass *analysis.Pass, providedPkg, interfaceName string) (*types.Interface, string, error) {
 	// Attempt in imports
 	for _, imp := range pass.Pkg.Imports() {
+		fmt.Printf("Found import: %q (name: %q), providedPkg: %s\n", imp.Path(), imp.Name(), providedPkg)
 		if imp.Name() == providedPkg ||
 			strings.HasSuffix(imp.Path(), "/"+providedPkg) ||
 			imp.Path() == providedPkg {
