@@ -1,14 +1,29 @@
-package main
+package errchecklog
 
 import (
 	"fmt"
 	"go/types"
 	"strings"
 
+	"github.com/mitchellh/mapstructure"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/buildssa"
 	"golang.org/x/tools/go/ssa"
 )
+
+type Config struct {
+	InterfacePackage string `mapstructure:"interface_package"`
+	InterfaceName    string `mapstructure:"interface_name"`
+}
+
+func New(conf any) ([]*analysis.Analyzer, error) {
+	var cfg Config
+	if err := mapstructure.Decode(conf, &cfg); err != nil {
+		return nil, err
+	}
+	analyzer := NewAnalyzer(cfg.InterfacePackage, cfg.InterfaceName)
+	return []*analysis.Analyzer{analyzer}, nil
+}
 
 /*
 NewAnalyzer создаёт анализатор (Analyzer), который проверяет вызовы методов интерфейса "Printer"
