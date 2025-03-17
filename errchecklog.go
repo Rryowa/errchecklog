@@ -1,3 +1,4 @@
+// errchecklog/plugin.go
 package errchecklog
 
 import (
@@ -5,24 +6,50 @@ import (
 	"go/types"
 	"strings"
 
-	"github.com/mitchellh/mapstructure"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/buildssa"
 	"golang.org/x/tools/go/ssa"
+
+	"github.com/golangci/plugin-module-register/register"
 )
 
+// Config holds the plugin settings.
 type Config struct {
 	InterfacePackage string `mapstructure:"interface_package"`
 	InterfaceName    string `mapstructure:"interface_name"`
 }
 
-func New(conf any) ([]*analysis.Analyzer, error) {
-	var cfg Config
-	if err := mapstructure.Decode(conf, &cfg); err != nil {
+// PluginErrchecklog implements register.LinterPlugin.
+type PluginErrchecklog struct {
+	settings Config
+}
+
+// Register the plugin with the module register.
+func init() {
+	register.Plugin("errchecklog", New)
+}
+
+// New decodes the settings and returns an instance of PluginErrchecklog.
+func New(settings any) (register.LinterPlugin, error) {
+	// Use the generic DecodeSettings function from the register package.
+	cfg, err := register.DecodeSettings[Config](settings)
+	if err != nil {
 		return nil, err
 	}
-	analyzer := NewAnalyzer(cfg.InterfacePackage, cfg.InterfaceName)
+	return &PluginErrchecklog{settings: cfg}, nil
+}
+
+// BuildAnalyzers returns the analyzer(s) for the plugin.
+func (p *PluginErrchecklog) BuildAnalyzers() ([]*analysis.Analyzer, error) {
+	// NewAnalyzer is your function that creates the Analyzer given the interface package and name.
+	analyzer := NewAnalyzer(p.settings.InterfacePackage, p.settings.InterfaceName)
 	return []*analysis.Analyzer{analyzer}, nil
+}
+
+// GetLoadMode returns the load mode for the plugin; adjust if needed.
+func (p *PluginErrchecklog) GetLoadMode() string {
+	// For example, use LoadModeSyntax to indicate that the linter should work on the syntax tree.
+	return register.LoadModeSyntax
 }
 
 /*

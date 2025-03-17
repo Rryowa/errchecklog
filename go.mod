@@ -3,7 +3,7 @@ module github.com/Rryowa/errchecklog
 go 1.23.0
 
 require (
-	github.com/mitchellh/mapstructure v1.5.0
+	github.com/golangci/plugin-module-register v0.1.1
 	golang.org/x/tools v0.31.0
 )
 
