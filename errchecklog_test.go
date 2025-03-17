@@ -8,6 +8,5 @@ import (
 
 func TestCallcheck(t *testing.T) {
 	testdata := analysistest.TestData()
-	//analysistest.Run(t, testdata, NewAnalyzer(strings.Join([]string{testdata, "src/github.com/errchecklog/fakefmt"}, "/")))
 	analysistest.Run(t, testdata, NewAnalyzer("fakefmt"))
 }

@@ -5,7 +5,12 @@ import (
 	"github.com/errchecklog/library"
 )
 
-func f() {
+func a() {
 	var p fakefmt.Printer = &library.FakefmtPrinter{}
 	p.Print("Hello, world!") // want "call to a provided interface found"
+}
+
+func b() {
+	var p fakefmt.NotAPrinter = &library.FakefmtPrinter{}
+	p.NotAPrint("Hello, world!")
 }
