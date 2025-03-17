@@ -1,26 +1,20 @@
 package main
 
 import (
+	"github.com/mitchellh/mapstructure"
 	"golang.org/x/tools/go/analysis"
 )
 
-type Plugin struct{}
-
-var PluginEntry = Plugin{}
-
-// ConfigFunc creates a default config instance that GolangCI-Lint will fill from `.golangci-lint.yaml`.
-func (p *Plugin) ConfigFunc() interface{} {
-	// Return a pointer to a default config.
-	return &Config{
-		InterfacePackage: "",
-		InterfaceName:    "",
-	}
+type Config struct {
+	InterfacePackage string `mapstructure:"interface_package"`
+	InterfaceName    string `mapstructure:"interface_name"`
 }
 
-// Run is called after GolangCI-Lint populates the config.
-// We create and return the analyzers to run, using the config values.
-func (p *Plugin) Run(cfg interface{}) (checks []*analysis.Analyzer, err error) {
-	realCfg := cfg.(*Config)
-	analyzer := NewAnalyzer(realCfg.InterfacePackage, realCfg.InterfaceName)
+func New(conf any) ([]*analysis.Analyzer, error) {
+	var cfg Config
+	if err := mapstructure.Decode(conf, &cfg); err != nil {
+		return nil, err
+	}
+	analyzer := NewAnalyzer(cfg.InterfacePackage, cfg.InterfaceName)
 	return []*analysis.Analyzer{analyzer}, nil
 }
