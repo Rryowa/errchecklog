@@ -6,10 +6,11 @@ import (
 )
 
 type Handler struct {
-	printer fakefmt.Printer
+	printer     fakefmt.Printer
+	notAPrinter fakefmt.NotAPrinter
 }
 
-func New(printer fakefmt.Printer) *Handler {
+func New(printer fakefmt.Printer, aPrinter fakefmt.NotAPrinter) *Handler {
 	return &Handler{
 		printer: printer,
 	}
@@ -17,7 +18,9 @@ func New(printer fakefmt.Printer) *Handler {
 
 func c() {
 	var printerObj fakefmt.Printer = &library.FakefmtPrinter{}
-	var handler = New(printerObj)
+	var notAPrinter fakefmt.NotAPrinter = &library.FakefmtPrinter{}
+	var handler = New(printerObj, notAPrinter)
 
 	handler.printer.Print("Hello, world!") // want "call to a provided interface found"
+	handler.notAPrinter.NotAPrint("Hello, world!")
 }
