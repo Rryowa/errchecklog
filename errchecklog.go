@@ -77,7 +77,6 @@ func NewAnalyzer(providedPkg string) *analysis.Analyzer {
 						}
 
 						// 6) Проверяем, из какого пакета берётся этот конкретный тип;
-						//    если пакет отличается от пакета самого интерфейса — сообщаем.
 						named, _ := derefNamed(concreteType)
 						if named == nil {
 							continue
@@ -86,7 +85,6 @@ func NewAnalyzer(providedPkg string) *analysis.Analyzer {
 						if implPkg == nil {
 							continue
 						}
-						// If it's not the same package as the provided interface
 						if implPkg.Path() != providedPkgPath {
 							pass.Reportf(instr.Pos(),
 								"call to a provided interface found (method %q on type %v from pkg %q)",
