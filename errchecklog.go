@@ -24,7 +24,7 @@ NewAnalyzer создаёт анализатор (Analyzer), который пр�
 
 	analyzer := NewAnalyzer("github.com/errchecklog/fakefmt")
 */
-func NewAnalyzer(providedPkg string) *analysis.Analyzer {
+func NewAnalyzer(providedPkg, interfaceName string) *analysis.Analyzer {
 	return &analysis.Analyzer{
 		Name: "callcheck",
 		Doc:  "reports calls to methods of the provided interface when implemented by a different package",
@@ -33,7 +33,8 @@ func NewAnalyzer(providedPkg string) *analysis.Analyzer {
 		},
 		Run: func(pass *analysis.Pass) (interface{}, error) {
 			// 1) Ищем интерфейс "Printer" в указанном пакете (либо в текущем).
-			providedIface, providedPkgPath, err := findPrinterInterface(pass, providedPkg)
+			//    (In code, we're actually using the 'interfaceName' argument now.)
+			providedIface, providedPkgPath, err := findPrinterInterface(pass, providedPkg, interfaceName)
 			if err != nil {
 				return nil, err
 			}
@@ -110,24 +111,24 @@ findPrinterInterface ищет интерфейс с именем "Printer":
 
 или ошибку, если Интерфейс не найден.
 */
-func findPrinterInterface(pass *analysis.Pass, providedPkg string) (*types.Interface, string, error) {
+func findPrinterInterface(pass *analysis.Pass, providedPkg, interfaceName string) (*types.Interface, string, error) {
 	// Attempt in imports
 	for _, imp := range pass.Pkg.Imports() {
 		if imp.Name() == providedPkg ||
 			strings.HasSuffix(imp.Path(), "/"+providedPkg) ||
 			imp.Path() == providedPkg {
-			iface, ok := lookupInterface(imp.Scope(), "Printer")
+			iface, ok := lookupInterface(imp.Scope(), interfaceName)
 			if ok {
 				return iface, imp.Path(), nil
 			}
 		}
 	}
 	// Attempt in this package
-	iface, ok := lookupInterface(pass.Pkg.Scope(), "Printer")
+	iface, ok := lookupInterface(pass.Pkg.Scope(), interfaceName)
 	if ok {
 		return iface, pass.Pkg.Path(), nil
 	}
-	return nil, "", fmt.Errorf("could not find interface Printer in %q", providedPkg)
+	return nil, "", fmt.Errorf("could not find interface %s in %q", interfaceName, providedPkg)
 }
 
 // lookupInterface ищет в заданном scope объект с именем name и проверяет, является ли он интерфейсом.

@@ -8,5 +8,5 @@ import (
 
 func TestCallcheck(t *testing.T) {
 	testdata := analysistest.TestData()
-	analysistest.Run(t, testdata, NewAnalyzer("fakefmt"))
+	analysistest.Run(t, testdata, NewAnalyzer("fakefmt", "Printer"))
 }
