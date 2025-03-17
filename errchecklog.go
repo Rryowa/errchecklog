@@ -1,10 +1,8 @@
-// errchecklog/plugin.go
 package errchecklog
 
 import (
 	"fmt"
 	"go/types"
-	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/buildssa"
@@ -13,81 +11,50 @@ import (
 	"github.com/golangci/plugin-module-register/register"
 )
 
-// Config holds the plugin settings.
-type Config struct {
-	InterfacePackage string `json:"interface_package"`
-	InterfaceName    string `json:"interface_name"`
-}
+type PluginErrchecklog struct{}
 
-// PluginErrchecklog implements register.LinterPlugin.
-type PluginErrchecklog struct {
-	settings Config
-}
-
-// Register the plugin with the module register.
 func init() {
 	register.Plugin("errchecklog", New)
 }
 
-// New decodes the settings and returns an instance of PluginErrchecklog.
 func New(settings any) (register.LinterPlugin, error) {
-	// Use the generic DecodeSettings function from the register package.
-	cfg, err := register.DecodeSettings[Config](settings)
-	if err != nil {
-		return nil, err
-	}
-	return &PluginErrchecklog{settings: cfg}, nil
+	return &PluginErrchecklog{}, nil
 }
 
-// BuildAnalyzers returns the analyzer(s) for the plugin.
 func (p *PluginErrchecklog) BuildAnalyzers() ([]*analysis.Analyzer, error) {
-	// NewAnalyzer is your function that creates the Analyzer given the interface package and name.
-	analyzer := NewAnalyzer(p.settings.InterfacePackage, p.settings.InterfaceName)
+	analyzer := NewAnalyzer()
 	return []*analysis.Analyzer{analyzer}, nil
 }
 
-// GetLoadMode returns the load mode for the plugin; adjust if needed.
 func (p *PluginErrchecklog) GetLoadMode() string {
-	// For example, use LoadModeSyntax to indicate that the linter should work on the syntax tree.
 	return register.LoadModeSyntax
 }
 
-/*
-NewAnalyzer создаёт анализатор (Analyzer), который проверяет вызовы методов интерфейса "Printer"
-и сообщает о случаях, когда конкретная реализация этого интерфейса находится в другом пакете
-(отличном от пакета, где определён сам интерфейс).
-
-Как это работает в общих чертах:
- 1. Мы ищем интерфейс "Printer" в заданном пакете (по названию или пути).
- 2. Мы просматриваем SSA-представление кода, чтобы найти все вызовы методов через интерфейс.
- 3. Если такой интерфейсный вызов относится к "Printer", но конкретный тип-реализация берётся из другого пакета, мы формируем предупреждение (diagnostic).
-*/
-func NewAnalyzer(providedPkg, interfaceName string) *analysis.Analyzer {
+func NewAnalyzer() *analysis.Analyzer {
 	return &analysis.Analyzer{
 		Name: "errchecklog",
-		Doc:  "reports calls to methods of the provided interface when implemented by a different package",
+		Doc:  "reports calls to methods of the Log interface when the concrete implementation comes from a different package",
 		Requires: []*analysis.Analyzer{
 			buildssa.Analyzer,
 		},
 		Run: func(pass *analysis.Pass) (interface{}, error) {
-			// 1) Ищем интерфейс "Printer" в указанном пакете (либо в текущем).
-			//    (In code, we're actually using the 'interfaceName' argument now.)
-			providedIface, providedPkgPath, err := findPrinterInterface(pass, providedPkg, interfaceName)
+			// Locate the Log interface in the current package or in one of the imports.
+			logIface, logPkgPath, err := findLogInterface(pass)
 			if err != nil {
 				return nil, err
 			}
 
-			// 2) Собираем названия всех методов, объявленных в этом интерфейсе.
-			methodNames := make(map[string]bool)
-			for i := 0; i < providedIface.NumMethods(); i++ {
-				m := providedIface.Method(i)
-				methodNames[m.Name()] = true
+			// Build a set of method names declared in the Log interface.
+			logMethods := make(map[string]bool)
+			for i := 0; i < logIface.NumMethods(); i++ {
+				m := logIface.Method(i)
+				logMethods[m.Name()] = true
 			}
 
-			// 3) Получаем SSA-представление кода текущего пакета.
+			// Get the SSA representation of the code.
 			ssaProg := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
 
-			// 4) Проходим по всем функциям в SSA-программе и ищем вызовы через интерфейс.
+			// Walk through all functions and instructions in the SSA.
 			for _, fn := range ssaProg.SrcFuncs {
 				for _, block := range fn.Blocks {
 					for _, instr := range block.Instrs {
@@ -95,27 +62,24 @@ func NewAnalyzer(providedPkg, interfaceName string) *analysis.Analyzer {
 						if !ok {
 							continue
 						}
-						// Проверяем, что это вызов именно через интерфейс (IsInvoke).
+						// Only check interface calls.
 						if !call.Common().IsInvoke() {
 							continue
 						}
 
-						// Метод, который вызывается, например "Print" в x.Print(...)
-						invokedMethod := call.Common().Method.Name()
-						if !methodNames[invokedMethod] {
+						methodName := call.Common().Method.Name()
+						if !logMethods[methodName] {
 							continue
 						}
 
-						// 5) call.Common().Value — это значение интерфейса;
-						//    найдём конкретный тип, который скрывается за интерфейсом.
+						// Resolve the concrete type behind the interface value.
 						ifaceVal := call.Common().Value
-						concreteType := resolveConcrete(ifaceVal, providedIface)
+						concreteType := resolveConcrete(ifaceVal, logIface)
 						if concreteType == nil {
-							// can't resolve => skip
 							continue
 						}
 
-						// 6) Проверяем, из какого пакета берётся этот конкретный тип;
+						// Determine the named type to check its package.
 						named, _ := derefNamed(concreteType)
 						if named == nil {
 							continue
@@ -124,10 +88,11 @@ func NewAnalyzer(providedPkg, interfaceName string) *analysis.Analyzer {
 						if implPkg == nil {
 							continue
 						}
-						if implPkg.Path() != providedPkgPath {
+						// Report if the concrete type is implemented from a package different than the Log interface.
+						if implPkg.Path() != logPkgPath {
 							pass.Reportf(instr.Pos(),
-								"call to a provided interface found (method %q on type %v from pkg %q)",
-								invokedMethod, named.Obj().Name(), implPkg.Path())
+								"call to Log method %q on type %v from pkg %q",
+								methodName, named.Obj().Name(), implPkg.Path())
 						}
 					}
 				}
@@ -138,39 +103,20 @@ func NewAnalyzer(providedPkg, interfaceName string) *analysis.Analyzer {
 	}
 }
 
-/*
-findPrinterInterface ищет интерфейс с именем "Printer":
-  - Сначала в импортированных пакетах, подходящих под providedPkg (по названию или суффиксу пути).
-  - Если не находит, то в текущем пакете.
-
-Возвращает:
-
-	(сам Интерфейс, путь пакета Интерфейса, nil)
-
-или ошибку, если Интерфейс не найден.
-*/
-func findPrinterInterface(pass *analysis.Pass, providedPkg, interfaceName string) (*types.Interface, string, error) {
-	// Attempt in imports
-	for _, imp := range pass.Pkg.Imports() {
-		fmt.Printf("Found import: %q (name: %q), providedPkg: %s\n", imp.Path(), imp.Name(), providedPkg)
-		if imp.Name() == providedPkg ||
-			strings.HasSuffix(imp.Path(), "/"+providedPkg) ||
-			imp.Path() == providedPkg {
-			iface, ok := lookupInterface(imp.Scope(), interfaceName)
-			if ok {
-				return iface, imp.Path(), nil
-			}
-		}
-	}
-	// Attempt in this package
-	iface, ok := lookupInterface(pass.Pkg.Scope(), interfaceName)
-	if ok {
+// findLogInterface searches for the "Log" interface in the current package or its imports.
+func findLogInterface(pass *analysis.Pass) (*types.Interface, string, error) {
+	if iface, ok := lookupInterface(pass.Pkg.Scope(), "Log"); ok {
 		return iface, pass.Pkg.Path(), nil
 	}
-	return nil, "", fmt.Errorf("could not find interface %s in %q", interfaceName, providedPkg)
+	for _, imp := range pass.Pkg.Imports() {
+		if iface, ok := lookupInterface(imp.Scope(), "Log"); ok {
+			return iface, imp.Path(), nil
+		}
+	}
+	return nil, "", fmt.Errorf("could not find interface Log")
 }
 
-// lookupInterface ищет в заданном scope объект с именем name и проверяет, является ли он интерфейсом.
+// lookupInterface finds an object with the given name in the provided scope and checks if it's an interface.
 func lookupInterface(scope *types.Scope, name string) (*types.Interface, bool) {
 	obj := scope.Lookup(name)
 	if obj == nil {
@@ -184,45 +130,34 @@ func lookupInterface(scope *types.Scope, name string) (*types.Interface, bool) {
 	return iface, ok
 }
 
-/*
-resolveConcrete пытается проследить SSA-инструкции назад(backtrack), чтобы определить реальный
-конкретный тип, лежащий за значением интерфейса. Например:
-  - *ssa.MakeInterface — точка, где конкретный тип X заворачивается в интерфейс.
-  - *ssa.Field / *ssa.FieldAddr — ссылку на поле структуры.
-  - *ssa.UnOp / *ssa.Convert / *ssa.Call — когда значение преобразуется, передаётся и т.д.
-  - *ssa.Phi — слияние нескольких путей.
-
-Рекурсивно проверяя эти инструкции, мы пытаемся выяснить, какой именно тип реализует интерфейс
-*/
+// resolveConcrete attempts to determine the concrete type behind an interface value by backtracking SSA instructions.
 func resolveConcrete(val ssa.Value, iface *types.Interface) types.Type {
 	switch v := val.(type) {
 	case *ssa.MakeInterface:
-		// Момент, когда конкретный тип X "оборачивают" в интерфейс.
+		// The point where a concrete type is wrapped into an interface.
 		return v.X.Type()
 
 	case *ssa.UnOp:
-		// Операции типа &x или *x; разбираем, что за x.
+		// For operations like &x or *x.
 		return resolveConcrete(v.X, iface)
 
 	case *ssa.Field:
-		// Доступ к полю x.field; смотрим, что за x.
+		// Accessing a field: x.field.
 		return resolveConcrete(v.X, iface)
 
 	case *ssa.FieldAddr:
-		// Адрес поля x.field; тоже смотрим, что за x.
+		// Address of a field: &x.field.
 		return resolveConcrete(v.X, iface)
 
 	case *ssa.Convert:
-		// Преобразование T(x); идём к x.
+		// Conversion: T(x).
 		return resolveConcrete(v.X, iface)
 
 	case *ssa.Call:
-		// Вызов может вернуть структуру, интерфейс и т.д
-		// Если возвращённый тип не является интерфейсом, значит это уже конкретика
+		// When a call returns an interface or concrete type.
 		if !isInterface(v.Type()) {
 			return v.Type()
 		}
-		// Если всё ещё интерфейс, иногда в аргументах вызова скрывается конкретный тип
 		for _, arg := range v.Common().Args {
 			if types.Implements(arg.Type(), iface) ||
 				types.Implements(types.NewPointer(arg.Type()), iface) {
@@ -232,8 +167,7 @@ func resolveConcrete(val ssa.Value, iface *types.Interface) types.Type {
 		return v.Type()
 
 	case *ssa.Phi:
-		// Слияние нескольких значений в разных флоу
-		// Пробуем каждый Edge
+		// Phi node: merge of several control flow paths.
 		for _, incoming := range v.Edges {
 			candidate := resolveConcrete(incoming, iface)
 			if candidate != nil {
@@ -243,33 +177,29 @@ func resolveConcrete(val ssa.Value, iface *types.Interface) types.Type {
 		return nil
 
 	case *ssa.Extract:
-		// Извлечение из многозначного результата (val, err) = someFunc(...)
+		// Extraction from a multi-value (e.g., (val, err) = someFunc(...)).
 		return resolveConcrete(v.Tuple, iface)
 
 	case *ssa.Alloc:
-		// new(SomeType) => указатель на SomeType
+		// Allocation: new(SomeType).
 		if allocType, ok := v.Type().(*types.Pointer); ok {
 			return allocType.Elem()
 		}
 		return v.Type()
 
 	default:
-		// Если паттерны выше не подошли, возвращаем val.Type().
-		// Он может оставаться интерфейсом, если глубже проследить не удалось.
+		// Fallback to the value's type.
+		return v.Type()
 	}
-	return val.Type()
 }
 
-// isInterface returns true if t.Underlying() is an interface.
+// isInterface returns true if t's underlying type is an interface.
 func isInterface(t types.Type) bool {
 	_, ok := t.Underlying().(*types.Interface)
 	return ok
 }
 
-/*
-derefNamed возвращает *types.Named, если t — это либо именованный тип, либо указатель на
-именованный тип (например, *MyStruct). Это полезно, чтобы узнать пакет (Pkg) типа.
-*/
+// derefNamed returns the named type if t is either a named type or a pointer to one.
 func derefNamed(t types.Type) (*types.Named, bool) {
 	if ptr, ok := t.(*types.Pointer); ok {
 		if named, ok2 := ptr.Elem().(*types.Named); ok2 {
