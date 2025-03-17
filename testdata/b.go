@@ -1,8 +1,8 @@
 package testdata
 
 import (
-	"github.com/errchecklog/fakefmt"
-	"github.com/errchecklog/library"
+	"github.com/Rryowa/errchecklog/fakefmt"
+	"github.com/Rryowa/errchecklog/library"
 )
 
 type Handler struct {
