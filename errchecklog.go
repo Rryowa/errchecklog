@@ -37,7 +37,7 @@ NewAnalyzer создаёт анализатор (Analyzer), который пр�
 */
 func NewAnalyzer(providedPkg, interfaceName string) *analysis.Analyzer {
 	return &analysis.Analyzer{
-		Name: "callcheck",
+		Name: "errchecklog",
 		Doc:  "reports calls to methods of the provided interface when implemented by a different package",
 		Requires: []*analysis.Analyzer{
 			buildssa.Analyzer,
